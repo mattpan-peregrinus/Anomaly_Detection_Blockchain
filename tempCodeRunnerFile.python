@@ -1,0 +1,206 @@
+import torch
+from torch_geometric.data import HeteroData
+import networkx as nx
+import matplotlib.pyplot as plt
+from torch_geometric.utils import to_networkx
+import torch.nn.functional as F
+from torch_geometric.nn import SAGEConv, HeteroConv
+from torch_geometric.loader import NeighborLoader
+
+# Define dimensions
+num_eoa_addresses = 100
+num_token_contracts = 50
+num_transactions = 200
+num_transfers = 150
+num_dexes = 20
+num_loan_contracts = 10
+num_lp = 10
+num_features = 16
+
+# Initialize HeteroData object
+data = HeteroData()
+
+# Create node features
+data['EOA Address'].x = torch.randn(num_eoa_addresses, num_features)
+data['Token Contract'].x = torch.randn(num_token_contracts, num_features)
+data['Transaction'].x = torch.randn(num_transactions, num_features)
+data['Transfer'].x = torch.randn(num_transfers, num_features)
+data['DEX'].x = torch.randn(num_dexes, num_features)
+data['Loan Contract'].x = torch.randn(num_loan_contracts, num_features)
+data['Liquidity Provider'].x = torch.rand(num_lp, num_features)
+
+# Add labels for EOA addresses (binary classification)
+data['EOA Address'].y = torch.randint(0, 2, (num_eoa_addresses,))
+
+# CASE 1: A transfers Ethereum to B
+num_edges_case_1 = 50
+offset_1 = 0
+senders_1 = torch.randint(0, num_eoa_addresses, (num_edges_case_1,))
+receivers_1 = torch.randint(0, num_eoa_addresses, (num_edges_case_1,))
+
+# CASE 2: A transfer a token to B
+num_edges_case_2 = 75
+offset_2 = num_edges_case_1
+senders_2 = torch.randint(0, num_eoa_addresses, (num_edges_case_2,))
+receivers_2 = torch.randint(0, num_eoa_addresses, (num_edges_case_2,))
+token_contracts = torch.randint(0, num_token_contracts, (num_edges_case_2,))
+
+# Case 3: A trades token x for token y on a DEX
+num_edges_case_3 = 40
+offset_3 = offset_2 + num_edges_case_2
+senders_3 = torch.randint(0, num_eoa_addresses, (num_edges_case_3,))
+dexes = torch.randint(0, num_dexes, (num_edges_case_3,))
+lp_nodes_3 = torch.randint(0, num_lp, (num_edges_case_3,))
+receivers_3 = torch.randint(0, num_eoa_addresses, (num_edges_case_3,))
+token_x = torch.randint(0, num_token_contracts, (num_edges_case_3,))
+token_y = torch.randint(0, num_token_contracts, (num_edges_case_3,))
+
+# Case 4: A borrows from a loan contract
+num_edges_case_4 = 25
+offset_4 = offset_3 + num_edges_case_3
+borrowers = torch.randint(0, num_eoa_addresses, (num_edges_case_4,))
+loan_contracts = torch.randint(0, num_loan_contracts, (num_edges_case_4,))
+lp_nodes_4 = torch.randint(0, num_lp, (num_edges_case_4,))
+tokens_4 = torch.randint(0, num_token_contracts, (num_edges_case_4,))
+
+# Combine all edges
+data['EOA Address', 'sends', 'Transaction'].edge_index = torch.cat([
+    torch.stack([senders_1, torch.arange(offset_1, offset_1 + num_edges_case_1)]),
+    torch.stack([senders_2, torch.arange(offset_2, offset_2 + num_edges_case_2)]),
+    torch.stack([senders_3, torch.arange(offset_3, offset_3 + num_edges_case_3)]),
+    torch.stack([borrowers, torch.arange(offset_4, offset_4 + num_edges_case_4)])
+], dim=1)
+
+data['Transaction', 'sent_to', 'EOA Address'].edge_index = torch.cat([
+    torch.stack([torch.arange(offset_1, offset_1 + num_edges_case_1), receivers_1])
+], dim=1)
+
+data['Transaction', 'contains', 'Transfer'].edge_index = torch.cat([
+    torch.stack([torch.arange(offset_1, offset_1 + num_edges_case_1), torch.arange(offset_1, offset_1 + num_edges_case_1)]),
+    torch.stack([torch.arange(offset_2, offset_2 + num_edges_case_2), torch.arange(offset_2, offset_2 + num_edges_case_2)]),
+    torch.stack([torch.arange(offset_3, offset_3 + num_edges_case_3), torch.arange(offset_3, offset_3 + num_edges_case_3)]),
+    torch.stack([torch.arange(offset_4, offset_4 + num_edges_case_4), torch.arange(offset_4, offset_4 + num_edges_case_4)])
+], dim=1)
+
+data['Transfer', 'sent_to', 'EOA Address'].edge_index = torch.cat([
+    torch.stack([torch.arange(offset_1, offset_1 + num_edges_case_1), receivers_1]),
+    torch.stack([torch.arange(offset_2, offset_2 + num_edges_case_2), receivers_2]),
+    torch.stack([torch.arange(offset_3, offset_3 + num_edges_case_3), receivers_3]),
+    torch.stack([torch.arange(offset_4, offset_4 + num_edges_case_4), borrowers])
+], dim=1)
+
+data['Transaction', 'sent_to', 'Token Contract'].edge_index = torch.stack([
+    torch.arange(offset_2, offset_2 + num_edges_case_2), token_contracts
+])
+
+data['Token Contract', 'includes', 'Transfer'].edge_index = torch.stack([
+    token_contracts, torch.arange(offset_2, offset_2 + num_edges_case_2)
+])
+
+data['Transaction', 'sent_to', 'DEX'].edge_index = torch.stack([
+    torch.arange(offset_3, offset_3 + num_edges_case_3), dexes
+])
+
+data['Transfer', 'includes', 'Token Contract'].edge_index = torch.cat([
+    torch.stack([torch.arange(offset_3, offset_3 + num_edges_case_3), token_x]),
+    torch.stack([torch.arange(offset_3, offset_3 + num_edges_case_3), token_y]),
+    torch.stack([torch.arange(offset_4, offset_4 + num_edges_case_4), tokens_4])
+], dim=1)
+
+data['Transfer', 'sent_to', 'Liquidity Provider'].edge_index = torch.stack([
+    torch.arange(offset_3, offset_3 + num_edges_case_3), lp_nodes_3
+])
+
+data['Liquidity Provider', 'sends', 'Transfer'].edge_index = torch.cat([
+    torch.stack([lp_nodes_3, torch.arange(offset_3, offset_3 + num_edges_case_3)]),
+    torch.stack([lp_nodes_4, torch.arange(offset_4, offset_4 + num_edges_case_4)])
+], dim=1)
+
+data['Transaction', 'sent_to', 'Loan Contract'].edge_index = torch.stack([
+    torch.arange(offset_4, offset_4 + num_edges_case_4), loan_contracts
+])
+
+# Rest of the code remains the same
+class HeteroGraphSAGE(torch.nn.Module):
+    def __init__(self, metadata, in_channels, hidden_channels, out_channels):
+        super().__init__()
+        # metadata[1] contains the edge_types (metadata is a tuple where the second element contains edge types)
+        self.conv1 = HeteroConv(
+            {
+                edge_type: SAGEConv(in_channels, hidden_channels)
+                for edge_type in metadata[1]  # Changed from metadata['edge_types']
+            },
+            aggr='sum',
+        )
+        self.conv2 = HeteroConv(
+            {
+                edge_type: SAGEConv(hidden_channels, out_channels)
+                for edge_type in metadata[1]  # Changed from metadata['edge_types']
+            },
+            aggr='sum',
+        )
+
+    def forward(self, x_dict, edge_index_dict):
+        x_dict = self.conv1(x_dict, edge_index_dict)
+        x_dict = {key: F.relu(x) for key, x in x_dict.items()}
+        x_dict = self.conv2(x_dict, edge_index_dict)
+        return x_dict
+
+# Train/validation/test sets
+for node_type in data.node_types:
+    num_nodes = data[node_type].num_nodes
+    data[node_type].train_mask = torch.rand(num_nodes) < 0.8
+    data[node_type].val_mask = (torch.rand(num_nodes) >= 0.8) & (torch.rand(num_nodes) < 0.9)
+    data[node_type].test_mask = torch.rand(num_nodes) >= 0.9
+
+# Create a NeighborLoader
+train_loader = NeighborLoader(
+    data,
+    num_neighbors={key: [15, 10] for key in data.edge_types},
+    batch_size=64,
+    input_nodes=('EOA Address', data['EOA Address'].train_mask),
+)
+
+# Initialize model and optimizer
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = HeteroGraphSAGE(
+    metadata=data.metadata(),
+    in_channels=num_features,
+    hidden_channels=32,
+    out_channels=2,
+).to(device)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+# Training loop
+for epoch in range(10):
+    model.train()
+    total_loss = 0
+
+    for batch in train_loader:
+        batch = batch.to(device)
+        out = model(batch.x_dict, batch.edge_index_dict)
+        loss = F.cross_entropy(
+            out['EOA Address'][batch['EOA Address'].train_mask],
+            batch['EOA Address'].y[batch['EOA Address'].train_mask],
+        )
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+
+    print(f'Epoch {epoch + 1}, Loss: {total_loss:.4f}')
+
+# Evaluation
+model.eval()
+correct = 0
+total = 0
+
+for batch in train_loader:
+    batch = batch.to(device)
+    out = model(batch.x_dict, batch.edge_index_dict)
+    pred = out['EOA Address'].argmax(dim=1)
+    correct += (pred[batch['EOA Address'].test_mask] == batch['EOA Address'].y[batch['EOA Address'].test_mask]).sum().item()
+    total += batch['EOA Address'].test_mask.sum().item()
+
+print(f'Test Accuracy: {correct / total:.4f}')

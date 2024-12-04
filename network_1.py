@@ -172,7 +172,7 @@ for epoch in range(10):
         # Compute loss (e.g., cross-entropy for classification)
         loss = F.cross_entropy(
             out['EOA Address'][batch['EOA Address'].train_mask],
-            batch['EOA Address'].y[batch['EOA Address'].train_mask],
+            batch['EOA Address'].y[batch['EOA Address'].train_mask], # Can't compute loss since there aren't any labels for 'y
         )
 
         # Backward pass
