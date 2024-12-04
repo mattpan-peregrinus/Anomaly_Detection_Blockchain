@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from torch_geometric.nn import SAGEConv, HeteroConv
 from torch_geometric.loader import NeighborLoader
 
-
 num_eoa_addresses = 100
 num_token_contracts = 50
 num_transactions = 200
@@ -32,7 +31,6 @@ data['Liquidity Provider'].x = torch.rand(num_lp, num_features)
 num_edges_case_1 = 50  # Number of Ethereum transfers between EOA
 senders = torch.randint(0, num_eoa_addresses, (num_edges_case_1,))
 receivers = torch.randint(0, num_eoa_addresses, (num_edges_case_1,))
-
 data['EOA Address', 'sends', 'Transaction'].edge_index = torch.stack([senders, torch.arange(num_edges_case_1)])
 data['Transaction', 'sent_to', 'EOA Address'].edge_index = torch.stack([torch.arange(num_edges_case_1), receivers])
 data['Transaction', 'contains', 'Transfer'].edge_index = torch.stack([torch.arange(num_edges_case_1), torch.arange(num_edges_case_1)])
@@ -40,19 +38,16 @@ data['EOA Address', 'sends', 'Transfer'].edge_index = torch.stack([senders, torc
 data['Transfer', 'sent_to', 'EOA Address'].edge_index = torch.stack([torch.arange(num_edges_case_1), receivers])
 
 
-
 # CASE 2: A transfer a token to B
 num_edges_case_2 = 75  # Number of token transfers via token contracts
 senders = torch.randint(0, num_eoa_addresses, (num_edges_case_2,))
 receivers = torch.randint(0, num_eoa_addresses, (num_edges_case_2,))
 token_contracts = torch.randint(0, num_token_contracts, (num_edges_case_2,))
-
 data['EOA Address', 'sends', 'Transaction'].edge_index = torch.stack([senders, torch.arange(num_edges_case_2)])
 data['Transaction', 'sent_to', 'Token Contract'].edge_index = torch.stack([torch.arange(num_edges_case_2), token_contracts])
 data['Transaction', 'contains', 'Transfer'].edge_index = torch.stack([torch.arange(num_edges_case_2), torch.arange(num_edges_case_2)])
 data['Token Contract', 'includes', 'Transfer'].edge_index = torch.stack([token_contracts, torch.arange(num_edges_case_2)])
 data['Transfer', 'sent_to', 'EOA Address'].edge_index = torch.stack([torch.arange(num_edges_case_2), receivers])
-
 
 
 # Case 3: A trades token x for token y on a DEX
@@ -63,7 +58,6 @@ lp_nodes = torch.randint(0, num_lp, (num_edges_case_3,))
 receivers = torch.randint(0, num_eoa_addresses, (num_edges_case_3,))
 token_x = torch.randint(0, num_token_contracts, (num_edges_case_3,))
 token_y = torch.randint(0, num_token_contracts, (num_edges_case_3,))
-
 data['EOA Address', 'sends', 'Transaction'].edge_index = torch.stack([senders, torch.arange(num_edges_case_3)])
 data['Transaction', 'sent_to', 'DEX'].edge_index = torch.stack([torch.arange(num_edges_case_3), dexes])
 data['Transaction', 'contains', 'Transfer'].edge_index = torch.stack([torch.arange(num_edges_case_3), torch.arange(num_edges_case_3)])
@@ -84,22 +78,18 @@ data['Transfer', 'sent_to', 'EOA Address'].edge_index = torch.cat([
 ], dim=1)
 
 
-
 # Case 4: A borrows from a loan contract 
 num_edges_case_4 = 25  # Number of borrowing transactions
 borrowers = torch.randint(0, num_eoa_addresses, (num_edges_case_4,))
 loan_contracts = torch.randint(0, num_loan_contracts, (num_edges_case_4,))
 lp_nodes = torch.randint(0, num_lp, (num_edges_case_4,))
 tokens = torch.randint(0, num_token_contracts, (num_edges_case_4,))
-
 data['EOA Address', 'sends', 'Transaction'].edge_index = torch.stack([borrowers, torch.arange(num_edges_case_4)])
 data['Transaction', 'sent_to', 'Loan Contract'].edge_index = torch.stack([torch.arange(num_edges_case_4), loan_contracts])
 data['Transaction', 'contains', 'Transfer'].edge_index = torch.stack([torch.arange(num_edges_case_4), torch.arange(num_edges_case_4)])
 data['Transfer', 'includes', 'Token Contract'].edge_index = torch.stack([torch.arange(num_edges_case_4), tokens])
 data['Transfer', 'sent_to', 'EOA Address'].edge_index = torch.stack([torch.arange(num_edges_case_4), borrowers])
 data['Liquidity Provider', 'sends', 'Transfer'].edge_index = torch.stack([lp_nodes, torch.arange(num_edges_case_4)])
-
-
 
 
 # Define the GraphSAGE model
